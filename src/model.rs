@@ -2,30 +2,6 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use crate::chat_interface::Message;
 use std::env;
-use std::fs;
-use std::sync::Mutex;
-use std::path::PathBuf;
-use once_cell::sync::Lazy;
-
-// Global directory variable
-static CURRENT_DIRECTORY: Lazy<Mutex<PathBuf>> = Lazy::new(|| {
-    Mutex::new(std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-});
-
-/// Set the current working directory
-pub fn set_directory(path: PathBuf) {
-    if let Ok(mut dir) = CURRENT_DIRECTORY.lock() {
-        *dir = path;
-    }
-}
-
-/// Get the current working directory
-pub fn get_directory() -> PathBuf {
-    match CURRENT_DIRECTORY.lock() {
-        Ok(guard) => guard.clone(),
-        Err(_) => PathBuf::from("."),
-    }
-}
 
 
 // Chat/LLM Structures
@@ -92,19 +68,10 @@ pub async fn generate_response(messages: &[Message]) -> Result<String, Box<dyn s
         api_key
     );
 
-    // Add directory context to the conversation
-    let current_dir = get_directory();
-    let directory_context = format!("Current working directory: {}", current_dir.display());
-    
-    let mut contents: Vec<ContentWithRole> = vec![ContentWithRole {
-        role: "user".to_string(),
-        parts: vec![Part { text: directory_context }],
-    }];
-    
-    contents.extend(messages.iter().map(|msg| ContentWithRole {
+    let contents: Vec<ContentWithRole> = messages.iter().map(|msg| ContentWithRole {
         role: sender_to_role(&msg.sender).to_string(),
         parts: vec![Part { text: msg.content.clone() }],
-    }));
+    }).collect();
 
     let request_body = GenerateContentRequest { contents };
 
@@ -175,33 +142,45 @@ pub async fn generate_embedding_document(texts: &[String]) -> Result<Vec<Vec<f32
     Ok(embeddings)
 }
 
-pub fn chunk_text(text: &str) -> Vec<String> {
-    let mut chunks = Vec::new();
-    let mut current_chunk = String::new();
-    let mut current_length = 0;
-    let max_length = 1000;
+pub async fn generate_embedding_query(query: &str) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
+    let client = Client::new();
+    let api_key = env::var("GEMINI_API_KEY")
+        .map_err(|_| "GEMINI_API_KEY not set in environment")?;
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key={}",
+        api_key
+    );
 
-    for line in text.lines() {
-        if current_length + line.len() > max_length {
-            chunks.push(current_chunk);
-            current_chunk = String::new();
-            current_length = 0;
+    let request_body = serde_json::json!({
+        "model": "models/gemini-embedding-001",
+        "content": {
+            "parts": [
+                {"text": query}
+            ]
+        },
+        "taskType": "RETRIEVAL_QUERY"
+    });
+
+    let response = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&request_body)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await?;
+        return Err(format!("API request failed: {}", error_text).into());
+    }
+
+    let response_body: serde_json::Value = response.json().await?;
+    if let Some(embedding) = response_body.get("embedding") {
+        if let Some(values) = embedding.get("values").and_then(|v| v.as_array()) {
+            let embedding: Vec<f32> = values.iter().filter_map(|x| x.as_f64().map(|f| f as f32)).collect();
+            return Ok(embedding);
         }
-        current_chunk.push_str(line);
-        current_length += line.len();
     }
-
-    if !current_chunk.is_empty() {
-        chunks.push(current_chunk);
-    }
-
-    chunks
+    Err("No embedding generated".into())
 }
 
 
-pub fn prepare_pdf(pdf_path: &str) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
-    let bytes = fs::read(pdf_path)?;
-    let text = pdf_extract::extract_text_from_mem(&bytes)?;
-    let chunks = chunk_text(&text);
-    Ok(chunks)
-}   

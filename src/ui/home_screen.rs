@@ -127,7 +127,7 @@ impl HomeScreen {
             "       |*        `.         ",
             "     / \\          `.       ",
             "     /  /            `>')3s,",
-            "-----------               ,'",
+            "  ---------               ,'",
             "                         7  ",
         ];
 
@@ -168,7 +168,7 @@ impl HomeScreen {
     fn render_directory_input(&self, frame: &mut Frame, area: Rect) {
         let directory_style = if self.is_editing_directory {
             Style::default()
-                .fg(Color::Rgb(0xFD, 0x5F, 0x54))
+                .fg(Color::Rgb(0xFF, 0xD6, 0x00))
                 .bg(Color::Rgb(0x44, 0x17, 0x1C))
                 
         } else {

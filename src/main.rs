@@ -12,16 +12,18 @@ use ratatui::{
     Terminal,
 };
 
-mod chat_interface;
-use chat_interface::ChatInterface;
-
-mod home_screen;
-use home_screen::{HomeScreen, HomeScreenAction};
+mod ui;
+use ui::chat_interface;
+use ui::chat_interface::ChatInterface;
+use ui::home_screen::{HomeScreen, HomeScreenAction};
 
 mod model;
 use model::{
-    generate_response, set_directory,
+    generate_response,
 };
+
+mod files;
+use files::setup_vector_store;
 
 #[tokio::main]
 async fn main() {
@@ -58,7 +60,6 @@ async fn run_app() -> Result<(), io::Error> {
                         match action {
                             HomeScreenAction::StartChat => {
                                 current_directory = home_screen.get_directory();
-                                set_directory(current_directory.clone());
                                 break;
                             }
                             HomeScreenAction::Quit => {
@@ -93,7 +94,6 @@ async fn run_app() -> Result<(), io::Error> {
                         let action = home_screen.handle_input('\n');
                         if action == HomeScreenAction::StartChat {
                             current_directory = home_screen.get_directory();
-                            set_directory(current_directory.clone());
                             break;
                         }
                     }
@@ -113,6 +113,12 @@ async fn run_app() -> Result<(), io::Error> {
             }
         }
     }
+
+
+    // set up the vector store
+    setup_vector_store(current_directory);
+
+    return Ok(());
 
     // Chat loop
     let mut chat = ChatInterface::new();
