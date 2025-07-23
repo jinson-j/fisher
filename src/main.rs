@@ -25,6 +25,8 @@ use model::{
 mod files;
 use files::setup_vector_store;
 
+mod faiss;
+
 #[tokio::main]
 async fn main() {
     dotenv().ok();
